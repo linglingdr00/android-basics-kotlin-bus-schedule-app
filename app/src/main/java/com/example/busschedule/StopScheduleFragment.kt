@@ -20,9 +20,16 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.coroutineScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.busschedule.databinding.StopScheduleFragmentBinding
+import com.example.busschedule.viewmodels.BusScheduleViewModel
+import com.example.busschedule.viewmodels.BusScheduleViewModelFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 
 class StopScheduleFragment: Fragment() {
 
@@ -37,6 +44,13 @@ class StopScheduleFragment: Fragment() {
     private lateinit var recyclerView: RecyclerView
 
     private lateinit var stopName: String
+
+    // 取得 view model 的引用
+    private val viewModel: BusScheduleViewModel by activityViewModels {
+        BusScheduleViewModelFactory(
+            (activity?.application as BusScheduleApplication).database.scheduleDao()
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,10 +70,28 @@ class StopScheduleFragment: Fragment() {
         return view
     }
 
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // 設定 recycler view
         recyclerView = binding.recyclerView
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
+        // 使用 {} 傳入 empty block (function) 即可
+        // 輕觸這個畫面中的 row 時，最好不會出現任何動作
+        val busStopAdapter = BusStopAdapter({})
+        recyclerView.adapter = busStopAdapter
+
+        GlobalScope.launch(Dispatchers.IO) {
+            // busStopAdapter.submitList(viewModel.scheduleForStopName(stopName))
+            // 由於 fullSchedule() 是 suspend function，因此需要從 coroutine 中呼叫
+            lifecycle.coroutineScope.launch {
+                // 根據查詢結果呼叫 collect() 時，busStopAdapter 會被更新
+                viewModel.fullSchedule().collect() {
+                    // 使用 Flow 發出的新 value 呼叫 submitList()，讓 adapter 根據新 data 更新 UI
+                    busStopAdapter.submitList(it)
+                }
+            }
+        }
     }
 
     override fun onDestroyView() {
